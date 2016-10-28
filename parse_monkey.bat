@@ -7,6 +7,8 @@ REM         [4]
 
 :MAIN
 REM INITIALIZE VARIABLES
+SET SN=%1
+SET VER=%2
 SET EVENT_COUNT=0
 REM CREATE REPORT FOLDER
 MKDIR report
@@ -17,26 +19,26 @@ IF [%3] EQU [] (
     SET EVENT_DELAY=%3
 )
 REM CHECK PASS/FAIL
-    SET RESULT="FAIL"
+    SET RESULT=FAIL
     FOR /F %%I IN ('FINDSTR /C:finished mky_event_*.txt') DO (
-        SET RESULT="PASS"
+        SET RESULT=PASS
     )
 REM COUNT MTTF
     REM GET EVENT COUNT
-    IF [%RESULT%] EQU ["PASS"] (
+    IF [%RESULT%] EQU [PASS] (
         CALL:MKYFINDSTR 3 "Events injected: " 1 EVENT_COUNT
     ) ELSE (
         CALL:MKYFINDSTR 5 "Sending event" 0 EVENT_COUNT
     )
     REM MTTF = EVENT_COUNT*EVENT_DELAY
     SET /A MTTF=EVENT_COUNT*EVENT_DELAY
-    CALL:GET_HOUR MTTF MTTF
+    CALL:GET_HOUR %MTTF% MTTF
 REM COUNT DROPPED EVENT RATE
     CALL:GET_DROP_COUNT DROP_COUNT
     IF [%EVENT_COUNT%] EQU [0] (
-        CALL:GET_DROP_RATE DROP_RATE
-    ) ELSE  (
         SET DROP_RATE="N/A"
+    ) ELSE  (
+        CALL:GET_DROP_RATE DROP_RATE
     )
 REM GET MONKEY TEST EARTH TIME
     SET START_TIME=
@@ -44,7 +46,7 @@ REM GET MONKEY TEST EARTH TIME
     CALL:GET_TIME_STAMP 1 START_TIME
     CALL:GET_TIME_STAMP 0 STOP_TIME
     SET /A TOTAL_TIME=STOP_TIME-START_TIME
-    CALL:GET_MINUTE TOTAL_TIME TOTAL_TIME
+    CALL:GET_MINUTE %TOTAL_TIME% TOTAL_TIME
 REM CREATE REPORT INDEX.HTML
     CALL:CREATE_REPORT_HTML
 REM END OF BATCH
@@ -78,16 +80,29 @@ GOTO:EOF
 
 :GET_HOUR
     SET /A X=%1/3600000
-    SET /A Y=%1/360
-    SET /A YY=Y%%1000
-    SET %2=%X%.%YY%
+    SET /A Y=%1/3600
+    SET /A Y=Y%%1000
+    SET /A YYY=Y/100
+    SET /A YYY=YYY%%10
+    SET /A YY=Y/10
+    SET /A YY=YY%%10
+    SET /A Y=Y%%10
+    SET %2=%X%.%YYY%%YY%%Y%
 GOTO:EOF
 
 :GET_MINUTE
+ECHO %1
     SET /A X=%1/60000
     SET /A Y=%1/60
-    SET /A YY=Y%%1000
-    SET %2=%X%.%YY%
+    ECHO %Y%
+    SET /A Y=Y%%1000
+    ECHO %Y%
+    SET /A YYY=Y/100
+    SET /A YYY=YYY%%100
+    SET /A YY=Y/10
+    SET /A YY=YY%%10
+    SET /A Y=Y%%10
+    SET %2=%X%.%YYY%%YY%%Y%
 GOTO:EOF
 
 :GET_DROP_COUNT
@@ -99,8 +114,8 @@ REM FIND THE DROPPED EVENT INFORMATION AND COUNT THE TOTAL DROPPED EVENT NUMBER
 GOTO:EOF
 
 :GET_DROP_RATE
-    SET /A DROP_COUNT=DROP_COUNT*10000
-    SET /A DRATE=DROP_COUNT/EVENT_COUNT
+    SET /A DROP_COUNT_K=DROP_COUNT*10000
+    SET /A DRATE=DROP_COUNT_K/EVENT_COUNT
     SET /A X=DRATE/100
     SET /A Y=DRATE%%100
     SET %1=%X%.%Y%
@@ -111,11 +126,11 @@ ECHO ^<table border=^'2^' cellpadding=^'6^'^>^
         ^<tr^>^<td colspan=^'2^' align=^'right^'^>%DATE:~0,10% %TIME%^</td^>^</tr^>^
         ^<tr^>^
             ^<th^>Device^</th^>^
-            ^<td align=^'center^'^>%1^</td^>^
+            ^<td align=^'center^'^>%SN%^</td^>^
         ^</tr^>^
         ^<tr^>^
             ^<th^>Version^</th^>^
-            ^<td align=^'right^'^>%2^</td^>^
+            ^<td align=^'right^'^>%VER%^</td^>^
         ^</tr^>^
         ^<tr^>^
             ^<th^>Monkey Test Result^</th^>^
@@ -145,6 +160,6 @@ ECHO ^<table border=^'2^' cellpadding=^'6^'^>^
             ^<th^>Monkey Test Time(minutes)^</th^>^
             ^<td align=^'right^'^>%TOTAL_TIME%^</td^>^
         ^</tr^>^
-    ^</table^> > index.html
+    ^</table^> > report\index.html
 GOTO:EOF
 
