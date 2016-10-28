@@ -58,7 +58,7 @@ REM Start Monkey Test
 
 REM Get Logs & Analysis
     CALL :getMonkeyLog
-    parse_monkey.bat %SN% %last_version%
+    parse_monkey.bat %SN% %NewestFile%
     CALL :uploadMonkeyLog
 
 
