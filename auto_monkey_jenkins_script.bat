@@ -56,14 +56,14 @@ REM Start Monkey Test
     CALL :start_monkey_test
 
 
-REM Get Logs & Analysis
+REM Get Logs & Analysis & Send Report Mail
     CALL :getMonkeyLog
-    parse_monkey.bat %SN% %NewestFile%
+    CALL :SimpleMonkeyParser
     CALL :uploadMonkeyLog
 
 
+REM END OF BUILD
 EXIT
-
 
 
 
@@ -480,6 +480,7 @@ REM **************** Subroutine Definition ****************
     
     goto:eof
 
+REM GET MONKEY LOGS
 REM ================================================================================================================
 :getMonkeyLog
     for /f "tokens=1-3 delims=/ " %%i in ('date /t') do (set Info_Date=%%i_%%j_%%k)  
@@ -561,60 +562,76 @@ REM ============================================================================
 @goto:eof
 
 
+REM MONKEY PARSER & HTML REPORTER
+REM =========================================================================================
 :SimpleMonkeyParser
-    REM CHECK PASS/FAIL
-        FOR /F %%I IN ('FINDSTR /C:finished mky_event_123.txt') DO (
-            GOTO:RESULT
-        )
-        ECHO Monkey Test Result: FAIL^<br^> > report\index.html
-        :MTTF
-        REM COUNT MTTF
-        REM GET EVENT COUNT
-        CALL:MKYFINDSTR 5 "Sending event" 0 EVENT_COUNT
-        ECHO Accumulative Event Counts: %EVENT_COUNT%^<br^> >> report\index.html
-        REM GET EVENT DELAY
-        REM MTTF = EVENT_COUNT*EVENT_DELAY
-        SET /A MTTF=EVENT_COUNT*EVENT_DELAY
-        ECHO EVENT_COUNT %EVENT_COUNT%^<br^> >> report\index.html
-        CALL:GET_HOUR MTTF MTTF
-        ECHO Event Count Based MTTF %MTTF%^<br^> >> report\index.html
-        GOTO:EARTH_TIME
-
-        :RESULT
-        ECHO Monkey Test Result: PASS^<br^> > report\index.html
+REM INITIALIZE VARIABLES
+SET VER=%NewestFile%
+SET EVENT_COUNT=0
+REM CHECK PASS/FAIL
+    SET RESULT=FAIL
+    FOR /F %%I IN ('FINDSTR /C:finished mky_event_*.txt') DO (
+        SET RESULT=PASS
+    )
+REM COUNT MTTF
+    REM GET EVENT COUNT
+    IF [%RESULT%] EQU [PASS] (
         CALL:MKYFINDSTR 3 "Events injected: " 1 EVENT_COUNT
-        ECHO Accumulative Event Counts: %EVENT_COUNT%^<br^> >> report\index.html
-        SET /A MTTF=EVENT_COUNT*EVENT_DELAY
-        CALL:GET_HOUR MTTF MTTF
-        ECHO Event Count Based MTTF %MTTF%^<br^> >> report\index.html
-
-    :EARTH_TIME
-    REM GET TEST TIME
-        SET START_TIME=
-        SET STOP_TIME=
-
-        CALL:GETTIME 1 START_TIME
-        CALL:GETTIME 0 STOP_TIME
-
-        SET /A TOTAL_TIME=STOP_TIME-START_TIME
-        CALL:GET_MINUTE TOTAL_TIME T
-        ECHO Monkey Test Time: %T% (minutes)^<br^> >> report\index.html
-
+    ) ELSE (
+        CALL:MKYFINDSTR 5 "Sending event" 0 EVENT_COUNT
+    )
+    REM MTTF = EVENT_COUNT*EVENT_DELAY
+    SET /A MTTF=EVENT_COUNT*EVENT_DELAY
+    CALL:GET_HOUR %MTTF% MTTF
+REM COUNT DROPPED EVENT RATE
+    CALL:GET_DROP_COUNT DROP_COUNT
+    IF [%EVENT_COUNT%] EQU [0] (
+        SET DROP_RATE="N/A"
+    ) ELSE  (
+        CALL:GET_DROP_RATE DROP_RATE
+    )
+REM GET MONKEY TEST EARTH TIME
+    SET START_TIME=
+    SET STOP_TIME=
+    CALL:GET_TIME_STAMP 1 START_TIME
+    CALL:GET_TIME_STAMP 0 STOP_TIME
+    SET /A TOTAL_TIME=STOP_TIME-START_TIME
+    CALL:GET_MINUTE %TOTAL_TIME% TOTAL_TIME
+REM CREATE REPORT INDEX.HTML
+    CALL:CREATE_REPORT_HTML
+REM CREATE JSON REPORT
+    CALL:CREATE_REPORT_JSON
 GOTO:EOF
 
+REM ====================================================================================================
+:CREATE_REPORT_JSON
+    SET TODAY_FOLDER=\\MINSMCHIEN-3020\report\json\%DATE:~0,4%%DATE:~5,2%%DATE:~8,2%
+    REM CREATE FOLDER %TODAY_FOLDER%
+    MKDIR %TODAY_FOLDER%
+    REM CD %TODAY_FOLDER%
+    CALL:CREATE_JSON_REPORT
+GOTO:EOF
 
-:GETTIME
-    FOR /F "tokens=8 delims==:] " %%I IN ('FINDSTR /C:calendar_time mky_event_123.txt') DO (
+:CREATE_JSON_REPORT
+ECHO {"CURRENT_TIME":"%DATE:~0,10% %TIME%","SN":"%SN%","VER":"%VER%","RESULT":"%RESULT%","EVENT_COUNT":"%EVENT_COUNT%","EVENT_DELAY":"%EVENT_DELAY%","MTTF":"%MTTF%","DROP_COUNT":"%DROP_COUNT%","DROP_RATE":"%DROP_RATE%","START_TIME":"%START_TIME%","STOP_TIME":"%STOP_TIME%","TOTAL_TIME":"%TOTAL_TIME%"} > %TODAY_FOLDER%\%SN%.json
+GOTO:EOF
+
+REM ====================================================================================================
+:GET_TIME_STAMP
+    REM PARAMETERS
+    REM     [1] 1: BREAK THE LOOP TO GET THE FIRST TIME STAMP
+    REM         0: DO NOT BREAK TO GET THE LAST TIME STAMP
+    REM     [2] RETURN TIME STAMP
+    FOR /F "tokens=8 delims==:] " %%I IN ('FINDSTR /C:calendar_time mky_event_*.txt') DO (
         SET %2=%%I
-        IF [%1] EQU [1] (
+        IF [%1%] EQU [1] (
             GOTO:EOF
         )
-    )    
+    )
 GOTO:EOF
 
-
 :MKYFINDSTR
-    FOR /F "tokens=%1 delims=# " %%I IN ('FINDSTR /C:%2 mky_event_123.txt') DO (
+    FOR /F "tokens=%1 delims=# " %%I IN ('FINDSTR /C:%2 mky_event_*.txt') DO (
         SET %4=%%I
         IF [%3] EQU [1] (
             GOTO:EOF
@@ -624,20 +641,89 @@ GOTO:EOF
 
 :GET_HOUR
     SET /A X=%1/3600000
-    SET /A Y=%1/360
-    SET /A YY=Y%%1000
-    SET %2=%X%.%YY%
+    SET /A Y=%1/3600
+    SET /A Y=Y%%1000
+    SET /A YYY=Y/100
+    SET /A YYY=YYY%%10
+    SET /A YY=Y/10
+    SET /A YY=YY%%10
+    SET /A Y=Y%%10
+    SET %2=%X%.%YYY%%YY%%Y%
 GOTO:EOF
 
 :GET_MINUTE
+ECHO %1
     SET /A X=%1/60000
     SET /A Y=%1/60
-    SET /A YY=Y%%1000
-    SET %2=%X%.%YY%
+    SET /A Y=Y%%1000
+    SET /A YYY=Y/100
+    SET /A YYY=YYY%%100
+    SET /A YY=Y/10
+    SET /A YY=YY%%10
+    SET /A Y=Y%%10
+    SET %2=%X%.%YYY%%YY%%Y%
+GOTO:EOF
+
+:GET_DROP_COUNT
+REM FIND THE DROPPED EVENT INFORMATION AND COUNT THE TOTAL DROPPED EVENT NUMBER
+    FOR /F "tokens=3,5,7,9,11 delims== " %%I IN ('FINDSTR /C:Dropped mky_event_*.txt') DO (
+        SET /A %1=%%I+%%J+%%K+%%L+%%M
+        GOTO:EOF
+    )
+GOTO:EOF
+
+:GET_DROP_RATE
+    SET /A DROP_COUNT_K=DROP_COUNT*10000
+    SET /A DRATE=DROP_COUNT_K/EVENT_COUNT
+    SET /A X=DRATE/100
+    SET /A Y=DRATE%%100
+    SET %1=%X%.%Y%
+GOTO:EOF
+
+:CREATE_REPORT_HTML
+ECHO ^<table border=^'2^' cellpadding=^'6^'^>^
+        ^<tr^>^<td colspan=^'2^' align=^'right^'^>%DATE:~0,10% %TIME%^</td^>^</tr^>^
+        ^<tr^>^
+            ^<th^>Device^</th^>^
+            ^<td align=^'center^'^>%SN%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Version^</th^>^
+            ^<td align=^'right^'^>%VER%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Monkey Test Result^</th^>^
+            ^<td align=^'right^'^>^<font color=#ff0000^>%RESULT%^</font^>^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Accumulative Event Counts^</th^>^
+            ^<td align=^'right^'^>%EVENT_COUNT%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Event Delay(ms)^</th^>^
+            ^<td align=^'right^'^>%EVENT_DELAY%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Event Count Based MTTF(hrs)^</th^>^
+            ^<td align=^'right^'^>%MTTF%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Total Dropped Event^</th^>^
+            ^<td align=^'right^'^>%DROP_COUNT%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Drop Rate(%)^</th^>^
+            ^<td align=^'right^'^>%DROP_RATE%^</td^>^
+        ^</tr^>^
+        ^<tr^>^
+            ^<th^>Monkey Test Time(minutes)^</th^>^
+            ^<td align=^'right^'^>%TOTAL_TIME%^</td^>^
+        ^</tr^>^
+    ^</table^> > report\index.html
 GOTO:EOF
 
 
-
+REM UPLOAD MONKEY LOG TO SERVER
 REM ================================================================================================================
 :uploadMonkeyLog
     echo "uploadMonkeylog"

@@ -94,9 +94,7 @@ GOTO:EOF
 ECHO %1
     SET /A X=%1/60000
     SET /A Y=%1/60
-    ECHO %Y%
     SET /A Y=Y%%1000
-    ECHO %Y%
     SET /A YYY=Y/100
     SET /A YYY=YYY%%100
     SET /A YY=Y/10
